@@ -1,0 +1,7 @@
+# Kaggle GPU images ship with a CUDA build of torch. Do NOT add torch here:
+# reinstalling it can pull a wheel that doesn't match the image's CUDA/driver.
+# Upper bounds keep runs reproducible. The code relies on BERT's
+# encoder.layer[i].attention.self.{query,key,value} nn.Linear layout.
+transformers>=4.40,<5
+datasets>=2.19,<5
+accelerate>=0.30,<2
