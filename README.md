@@ -18,15 +18,15 @@ Because both $A$ and $VR$ matrices have dimensions $(\text{seq\_len} \times \tex
 
 ## Benchmark Results (SST-2 Sentiment Analysis)
 
-| Metric | Teacher Baseline | Standard KD (`kd_project`) | MiniLM Student (This Repo) |
-| :--- | :--- | :--- | :--- |
-| **Layers** | 12 | 6 | 4 |
-| **Hidden Size** | 768 | 768 | 384 |
-| **Parameters** | 109.5M | ~66.0M | **19.2M (-82.5%)** |
-| **SST-2 Accuracy** | 92.4% | 91.05% | 81.10% |
-| **Throughput (T4)**| ~3,000 samples/s | ~5,500 samples/s | **12,618 samples/s** |
+| Metric | Teacher Baseline | MiniLM Student (This Repo) |
+| :--- | :--- | :--- |
+| **Layers** | 12 | 4 |
+| **Hidden Size** | 768 | 384 |
+| **Parameters** | 109.5M | **19.2M (-82.5%)** |
+| **SST-2 Accuracy** | 92.4% | 81.10% |
+| **Throughput (T4)**| ~3,000 samples/s | **12,618 samples/s** |
 
-**Business Application:** This pipeline is optimized for edge deployment and high-volume text processing where latency and compute costs are primary constraints, successfully trading a ~10% accuracy drop for a >4x speedup.
+**Business Application:** This pipeline is optimized for edge deployment and high-volume text processing where latency and compute costs are primary constraints, successfully trading an ~11% accuracy drop for a >4x speedup and massive memory reduction.
 
 ---
 
