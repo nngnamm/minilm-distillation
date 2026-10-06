@@ -25,8 +25,9 @@ class MiniLMTrainer(Trainer):
 
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         # Move teacher to device if needed (first pass)
-        if self.teacher.bert.embeddings.word_embeddings.weight.device != model.bert.embeddings.word_embeddings.weight.device:
-            self.teacher = self.teacher.to(model.bert.embeddings.word_embeddings.weight.device)
+        device = inputs["attention_mask"].device
+        if self.teacher.bert.embeddings.word_embeddings.weight.device != device:
+            self.teacher = self.teacher.to(device)
             
         student_out = model(**inputs)
         ce_loss = student_out.loss
