@@ -2,10 +2,11 @@ import math
 import torch
 import torch.nn.functional as F
 
+
 def split_heads(x: torch.Tensor, num_heads: int) -> torch.Tensor:
-    """[B, T, H] -> [B, num_heads, T, H // num_heads]."""
     batch, seq_len, hidden = x.shape
     return x.view(batch, seq_len, num_heads, hidden // num_heads).transpose(1, 2)
+
 
 def relation_log_probs(
     left: torch.Tensor,
@@ -13,7 +14,6 @@ def relation_log_probs(
     num_heads: int,
     attention_mask: torch.Tensor,
 ) -> torch.Tensor:
-    """log softmax(left_h @ right_h^T / sqrt(d_h)) over the key axis."""
     left_h = split_heads(left.float(), num_heads)
     right_h = split_heads(right.float(), num_heads)
     scores = left_h @ right_h.transpose(-1, -2) / math.sqrt(left_h.size(-1))
@@ -21,12 +21,12 @@ def relation_log_probs(
     scores = scores.masked_fill(~key_mask, torch.finfo(scores.dtype).min)
     return F.log_softmax(scores, dim=-1)
 
+
 def masked_relation_kl(
     teacher_log_probs: torch.Tensor,
     student_log_probs: torch.Tensor,
     attention_mask: torch.Tensor,
 ) -> torch.Tensor:
-    """KL(teacher || student) for [B, R, T, T] relation distributions."""
     key_mask = attention_mask[:, None, None, :].bool()  # [B, 1, 1, T]
     teacher_probs = teacher_log_probs.exp()
     pointwise = teacher_probs * (teacher_log_probs - student_log_probs)

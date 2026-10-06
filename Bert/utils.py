@@ -8,14 +8,15 @@ from Bert.config import BATCH_SIZE, LEARNING_RATE, NUM_EPOCHS, SEED
 
 _accuracy = evaluate.load("accuracy")
 
+
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
-    # The reference used tuple, HF trainer often passes EvalPrediction objects. 
-    # Just in case, it works for both if we treat it as a tuple
+
     if isinstance(logits, tuple):
         logits = logits[0]
     predictions = np.argmax(logits, axis=-1)
     return _accuracy.compute(predictions=predictions, references=labels)
+
 
 def make_training_args(output_dir, epochs=NUM_EPOCHS, lr=LEARNING_RATE):
     return TrainingArguments(
@@ -26,7 +27,7 @@ def make_training_args(output_dir, epochs=NUM_EPOCHS, lr=LEARNING_RATE):
         per_device_eval_batch_size=128,
         weight_decay=0.01,
         warmup_ratio=0.1,
-        eval_strategy="epoch",      # Eval every epoch
+        eval_strategy="epoch",
         save_strategy="epoch",
         logging_steps=50,
         save_total_limit=1,
@@ -35,11 +36,13 @@ def make_training_args(output_dir, epochs=NUM_EPOCHS, lr=LEARNING_RATE):
         fp16=torch.cuda.is_available(),
         seed=SEED,
         report_to="none",
-        remove_unused_columns=False, # We need all columns for our custom forward pass
+        remove_unused_columns=False,
     )
+
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters())
+
 
 def save_history(trainer, output_dir):
     os.makedirs(output_dir, exist_ok=True)

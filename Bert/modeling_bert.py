@@ -1,16 +1,3 @@
-"""BERT for sequence classification, written as plain PyTorch nn.Modules.
-
-This is the architecture shared by the teacher (model_teacher.py) and the student
-(model_student.py).
-
-Module and parameter names deliberately mirror Hugging Face's
-``BertForSequenceClassification`` (e.g. ``bert.encoder.layer.3.attention.self.query``).
-This lets a pretrained HF checkpoint be loaded with a strict ``load_state_dict``.
-
-Unlike the HF model, every encoder layer returns its projected Q, K, V tensors. The
-MiniLM loss can then read them directly, without forward hooks.
-"""
-
 from __future__ import annotations
 
 import json
@@ -56,8 +43,6 @@ class BertConfig:
 
 
 class QKV(NamedTuple):
-    """Projected (pre-head-split) query/key/value of one layer, each [B, T, H]."""
-
     query: torch.Tensor
     key: torch.Tensor
     value: torch.Tensor
@@ -65,28 +50,33 @@ class QKV(NamedTuple):
 
 class ClassifierOutput(NamedTuple):
     loss: torch.Tensor | None
-    logits: torch.Tensor           # [B, num_labels]
-    qkv: tuple[QKV, ...]           # one QKV per encoder layer, index -1 = last layer
-
-
-# --------------------------------------------------------------------------- #
-# Building blocks
-# --------------------------------------------------------------------------- #
+    logits: torch.Tensor
+    qkv: tuple[QKV, ...]
 
 
 class BertEmbeddings(nn.Module):
-    """word + position + token-type embeddings -> LayerNorm -> dropout."""
-
     def __init__(self, config: BertConfig) -> None:
         super().__init__()
-        self.word_embeddings = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id)
-        self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
-        self.token_type_embeddings = nn.Embedding(config.type_vocab_size, config.hidden_size)
+        self.word_embeddings = nn.Embedding(
+            config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id
+        )
+        self.position_embeddings = nn.Embedding(
+            config.max_position_embeddings, config.hidden_size
+        )
+        self.token_type_embeddings = nn.Embedding(
+            config.type_vocab_size, config.hidden_size
+        )
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.register_buffer("position_ids", torch.arange(config.max_position_embeddings)[None, :], persistent=False)
+        self.register_buffer(
+            "position_ids",
+            torch.arange(config.max_position_embeddings)[None, :],
+            persistent=False,
+        )
 
-    def forward(self, input_ids: torch.Tensor, token_type_ids: torch.Tensor | None = None) -> torch.Tensor:
+    def forward(
+        self, input_ids: torch.Tensor, token_type_ids: torch.Tensor | None = None
+    ) -> torch.Tensor:
         seq_len = input_ids.size(1)
         if token_type_ids is None:
             token_type_ids = torch.zeros_like(input_ids)
@@ -99,8 +89,6 @@ class BertEmbeddings(nn.Module):
 
 
 class BertSelfAttention(nn.Module):
-    """Multi-head scaled dot-product self-attention that also returns Q, K, V."""
-
     def __init__(self, config: BertConfig) -> None:
         super().__init__()
         self.num_heads = config.num_attention_heads
@@ -111,27 +99,29 @@ class BertSelfAttention(nn.Module):
         self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
 
     def _split_heads(self, x: torch.Tensor) -> torch.Tensor:
-        """[B, T, H] -> [B, heads, T, head_dim]."""
         batch, seq_len, _ = x.shape
         return x.view(batch, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
 
-    def forward(self, hidden_states: torch.Tensor, attention_mask: torch.Tensor) -> tuple[torch.Tensor, QKV]:
-        q, k, v = self.query(hidden_states), self.key(hidden_states), self.value(hidden_states)
+    def forward(
+        self, hidden_states: torch.Tensor, attention_mask: torch.Tensor
+    ) -> tuple[torch.Tensor, QKV]:
+        q, k, v = (
+            self.query(hidden_states),
+            self.key(hidden_states),
+            self.value(hidden_states),
+        )
         qh, kh, vh = self._split_heads(q), self._split_heads(k), self._split_heads(v)
 
-        scores = qh @ kh.transpose(-1, -2) / math.sqrt(self.head_dim)            # [B, heads, T, T]
-        key_is_padding = ~attention_mask[:, None, None, :].bool()                # [B, 1, 1, T]
-        # masked_fill (not "+ mask") so fp16 scores can't overflow to -inf.
+        scores = qh @ kh.transpose(-1, -2) / math.sqrt(self.head_dim)
+        key_is_padding = ~attention_mask[:, None, None, :].bool()
         scores = scores.masked_fill(key_is_padding, torch.finfo(scores.dtype).min)
         probs = self.dropout(F.softmax(scores, dim=-1))
 
-        context = (probs @ vh).transpose(1, 2).reshape(hidden_states.shape)     # [B, T, H]
+        context = (probs @ vh).transpose(1, 2).reshape(hidden_states.shape)
         return context, QKV(q, k, v)
 
 
 class BertSelfOutput(nn.Module):
-    """Attention output projection + residual + LayerNorm."""
-
     def __init__(self, config: BertConfig) -> None:
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
@@ -145,10 +135,12 @@ class BertSelfOutput(nn.Module):
 class BertAttention(nn.Module):
     def __init__(self, config: BertConfig) -> None:
         super().__init__()
-        self.self = BertSelfAttention(config)   # attribute name "self" matches HF's parameter names
+        self.self = BertSelfAttention(config)
         self.output = BertSelfOutput(config)
 
-    def forward(self, hidden_states: torch.Tensor, attention_mask: torch.Tensor) -> tuple[torch.Tensor, QKV]:
+    def forward(
+        self, hidden_states: torch.Tensor, attention_mask: torch.Tensor
+    ) -> tuple[torch.Tensor, QKV]:
         context, qkv = self.self(hidden_states, attention_mask)
         return self.output(context, hidden_states), qkv
 
@@ -159,32 +151,32 @@ class BertIntermediate(nn.Module):
         self.dense = nn.Linear(config.hidden_size, config.intermediate_size)
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        return F.gelu(self.dense(hidden_states))  # exact (erf) GELU, as in BERT's "gelu"
+        return F.gelu(self.dense(hidden_states))
 
 
 class BertOutput(nn.Module):
-    """Feed-forward output projection + residual + LayerNorm."""
-
     def __init__(self, config: BertConfig) -> None:
         super().__init__()
         self.dense = nn.Linear(config.intermediate_size, config.hidden_size)
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
-    def forward(self, hidden_states: torch.Tensor, residual: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, hidden_states: torch.Tensor, residual: torch.Tensor
+    ) -> torch.Tensor:
         return self.LayerNorm(self.dropout(self.dense(hidden_states)) + residual)
 
 
 class BertLayer(nn.Module):
-    """One Transformer encoder block: self-attention + feed-forward."""
-
     def __init__(self, config: BertConfig) -> None:
         super().__init__()
         self.attention = BertAttention(config)
         self.intermediate = BertIntermediate(config)
         self.output = BertOutput(config)
 
-    def forward(self, hidden_states: torch.Tensor, attention_mask: torch.Tensor) -> tuple[torch.Tensor, QKV]:
+    def forward(
+        self, hidden_states: torch.Tensor, attention_mask: torch.Tensor
+    ) -> tuple[torch.Tensor, QKV]:
         attn_out, qkv = self.attention(hidden_states, attention_mask)
         return self.output(self.intermediate(attn_out), attn_out), qkv
 
@@ -192,9 +184,13 @@ class BertLayer(nn.Module):
 class BertEncoder(nn.Module):
     def __init__(self, config: BertConfig) -> None:
         super().__init__()
-        self.layer = nn.ModuleList([BertLayer(config) for _ in range(config.num_hidden_layers)])
+        self.layer = nn.ModuleList(
+            [BertLayer(config) for _ in range(config.num_hidden_layers)]
+        )
 
-    def forward(self, hidden_states: torch.Tensor, attention_mask: torch.Tensor) -> tuple[torch.Tensor, tuple[QKV, ...]]:
+    def forward(
+        self, hidden_states: torch.Tensor, attention_mask: torch.Tensor
+    ) -> tuple[torch.Tensor, tuple[QKV, ...]]:
         all_qkv = []
         for layer in self.layer:
             hidden_states, qkv = layer(hidden_states, attention_mask)
@@ -203,8 +199,6 @@ class BertEncoder(nn.Module):
 
 
 class BertPooler(nn.Module):
-    """tanh(W · h_[CLS]) — the sentence representation fed to the classifier."""
-
     def __init__(self, config: BertConfig) -> None:
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
@@ -220,20 +214,15 @@ class BertModel(nn.Module):
         self.encoder = BertEncoder(config)
         self.pooler = BertPooler(config)
 
-    def forward(self, input_ids, attention_mask, token_type_ids=None) -> tuple[torch.Tensor, tuple[QKV, ...]]:
+    def forward(
+        self, input_ids, attention_mask, token_type_ids=None
+    ) -> tuple[torch.Tensor, tuple[QKV, ...]]:
         hidden_states = self.embeddings(input_ids, token_type_ids)
         hidden_states, all_qkv = self.encoder(hidden_states, attention_mask)
         return self.pooler(hidden_states), all_qkv
 
 
-# --------------------------------------------------------------------------- #
-# Classifier (base class of TeacherBert and StudentBert)
-# --------------------------------------------------------------------------- #
-
-
 class BertClassifier(nn.Module):
-    """BERT encoder + pooler + linear classification head."""
-
     def __init__(self, config: BertConfig) -> None:
         super().__init__()
         self.config = config
@@ -243,7 +232,6 @@ class BertClassifier(nn.Module):
         self.apply(self._init_weights)
 
     def _init_weights(self, module: nn.Module) -> None:
-        """BERT initialisation: N(0, 0.02) weights, zero biases, identity LayerNorm."""
         std = self.config.initializer_range
         if isinstance(module, nn.Linear):
             nn.init.normal_(module.weight, mean=0.0, std=std)
@@ -270,8 +258,6 @@ class BertClassifier(nn.Module):
         logits = self.classifier(self.dropout(pooled))
         loss = F.cross_entropy(logits.float(), labels) if labels is not None else None
         return ClassifierOutput(loss=loss, logits=logits, qkv=all_qkv)
-
-    # ---- persistence: config.json + model.safetensors ----
 
     def save_pretrained(self, directory: str | Path) -> None:
         directory = Path(directory)
