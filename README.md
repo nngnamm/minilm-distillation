@@ -12,7 +12,7 @@ MiniLM bypasses dimension alignment by transferring self-attention relations fro
 2. **Value-Relation Transfer:** Captures semantic token relationships using value-vector dot products:
    $$VR = \text{Softmax}\left(\frac{VV^T}{\sqrt{d_k}}\right)$$
 
-Because both $A$ and $VR$ matrices have dimensions $(\text{seq\_len} \times \text{seq\_len})$, the hidden dimension mathematically cancels out. This enables distilling directly from a 12-layer, 768-dimensional teacher to a 4-layer, 384-dimensional student without projection matrices, resulting in massive computational speedups.
+Because both $A$ and $VR$ matrices have dimensions (`seq_len` × `seq_len`), the hidden dimension mathematically cancels out. This enables distilling directly from a 12-layer, 768-dimensional teacher to a 4-layer, 384-dimensional student without projection matrices, resulting in massive computational speedups.
 
 ---
 
